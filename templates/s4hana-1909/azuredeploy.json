@@ -1,0 +1,690 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"location": {
+			"type": "String",
+			"metadata": {
+				"description": "Azure Region for deployment"
+			}
+		},
+
+		"netweaver_sid": {
+			"defaultValue": "A01",
+			"type": "String",
+			"metadata": {
+				"description": "SID of the S/4HANA system"
+			}
+		},
+		"netweaver_instance_no_pai": {
+			"defaultValue": "01",
+			"type": "String",
+			"metadata": {
+				"description": "Instance number of the S/4HANA PAI"
+			}
+		},
+		"netweaver_instance_no_scs": {
+			"defaultValue": "00",
+			"type": "String",
+			"metadata": {
+				"description": "Instance number of the S/4HANA ASCS"
+			}
+		},
+		"netweaver_os_user": {
+			"defaultValue": "localadmin",
+			"type": "String",
+			"metadata": {
+				"description": "Username of the default OS user for the S/4HANA VM"
+			}
+		},
+		"netweaver_os_image": {
+			"defaultValue": "rhel-76",
+			"type": "String",
+			"metadata": {
+				"description": "Predefined OS Image to use for S/4HANA VM"
+			},
+			"allowedValues": [
+				"rhel-74",
+				"rhel-76",
+				"sles-12-sp5",
+				"sles-15"
+			]
+		},
+		"netweaver_vm_name": {
+			"defaultValue": "s4hana",
+			"type": "String"
+		},
+		"netweaver_vm_size": {
+			"defaultValue": "Standard_D8ds_v4",
+			"type": "String"
+		},
+
+		"hana_sid": {
+			"defaultValue": "A01",
+			"type": "String",
+			"metadata": {
+				"description": "SID of the HANA MDC system"
+			}
+		},
+		"hana_instance_no": {
+			"defaultValue": "00",
+			"type": "String",
+			"metadata": {
+				"description": "Instance number of the HANA MDC system"
+			}
+		},
+		"hana_os_user": {
+			"defaultValue": "localadmin",
+			"type": "String",
+			"metadata": {
+				"description": "Username of the default OS user for all deployed VMs"
+			}
+		},
+		"hana_os_image": {
+			"defaultValue": "rhel-76",
+			"type": "String",
+			"metadata": {
+				"description": "Predefined OS Image to use for HANA VM"
+			},
+			"allowedValues": [
+				"rhel-74",
+				"rhel-76",
+				"sles-12-sp5",
+				"sles-15"
+			]
+		},
+		"hana_vm_name": {
+			"defaultValue": "database",
+			"type": "String"
+		},
+		"hana_vm_size": {
+			"defaultValue": "Standard_E20ds_v4",
+			"type": "String"
+		},
+
+		"master_pw": {
+			"type": "securestring",
+			"metadata": {
+				"description": "Master password for the OS and database users"
+			}
+		},
+
+		"virtual_network_name": {
+			"type": "string",
+			"metadata": {
+				"description": "New or Existing VNet Name"
+			}
+		},
+		"virtual_network_new_or_existing": {
+			"type": "string",
+			"metadata": {
+				"description": "Boolean indicating whether the VNet is new or existing"
+			},
+			"allowedValues": [
+				"new",
+				"existing"
+			]
+		},
+		"virtual_network_address_prefix": {
+			"type": "string",
+			"metadata": {
+				"description": "VNet address prefix"
+			}
+		},
+		"virtual_network_resource_group": {
+			"type": "string",
+			"metadata": {
+				"description": "Resource group of the VNet"
+			}
+		},
+		"subnet_name": {
+			"type": "string",
+			"metadata": {
+				"description": "New or Existing subnet Name"
+			}
+		},
+		"subnet_address_prefix": {
+			"type": "string",
+			"metadata": {
+				"description": "Subnet address prefix"
+			}
+		},
+
+		"repo_storageacc_name": {
+			"type": "string"
+		},
+		"repo_storageacc_resource_group": {
+			"type": "string"
+		},
+		"control_vm_name": {
+			"defaultValue": "control",
+			"type": "string"
+		}
+	},
+	"variables": {
+
+		"vnet_id": {
+			"new": "[resourceId('Microsoft.Network/virtualNetworks',parameters('virtual_network_name'))]",
+			"existing": "[resourceId(parameters('virtual_network_resource_group'),'Microsoft.Network/virtualNetworks',parameters('virtual_network_name'))]"
+		},
+		"subnet_id": "[concat(variables('vnet_id')[parameters('virtual_network_new_or_existing')],'/subnets/',parameters('subnet_name'))]",
+
+		"hana_nic_name": "[concat(parameters('hana_vm_name'),'-nic')]",
+		"hana_osdisk_name": "[concat(parameters('hana_vm_name'), '-os')]",
+		"hana_datadisk_size": "[if(startsWith(parameters('hana_vm_size'), 'Standard_M128'),'4095','2047')]",
+		"hana_backupdisk_size": "[if(startsWith(parameters('hana_vm_size'), 'Standard_M128'),'8191','4095')]",
+
+		"netweaver_nic_name": "[concat(parameters('netweaver_vm_name'),'-nic')]",
+		"netweaver_osdisk_name": "[concat(parameters('netweaver_vm_name'), '-os')]",
+		"netweaver_disk_sapmnt": "[concat(parameters('netweaver_vm_name'), '-sapmnt')]",
+		"netweaver_disk_usrsap": "[concat(parameters('netweaver_vm_name'), '-usrsap')]",
+
+		"control_vm_size": "Standard_B2s",
+		"control_vm_username": "phoenixsupport",
+		"control_vm_password": "[concat(toUpper(uniqueString(resourceGroup().id,deployment().name)), uniqueString(deployment().name, resourceGroup().id, parameters('master_pw')))]",
+		"control_nic_name": "[concat(parameters('control_vm_name'),'-nic')]",
+		"control_osdisk_name": "[concat(parameters('control_vm_name'), '-os')]",
+		"control_customdata_default": {
+			"initial_tasks": "op:waitForHANAVM,op:waitForNetweaverVM,op:mountScripts,wf:hana_install,wf:s4hana_1909_install",
+			"autostart": "true",
+			"webauth": "true"
+		},
+		"control_customdata_repository": {
+			"storage_account_name": "[parameters('repo_storageacc_name')]"
+		},
+		"control_customdata_hana": {
+			"hostagent_user": "sapadm",
+			"hostagent_password": "[parameters('master_pw')]",
+			"sid": "[parameters('hana_sid')]",
+			"instance_no": "[parameters('hana_instance_no')]",
+			"master_password": "[parameters('master_pw')]",
+			"initial_load": ""
+		},
+		"control_customdata_netweaver": {
+			"hostagent_user": "sapadm",
+			"hostagent_password": "[parameters('master_pw')]",
+			"sid": "[parameters('netweaver_sid')]",
+			"instance_no_pai": "[parameters('netweaver_instance_no_pai')]",
+			"instance_no_scs": "[parameters('netweaver_instance_no_scs')]",
+			"master_password": "[parameters('master_pw')]",
+			"initial_load": ""
+		},
+		"sasFunctionValues": {
+			"signedServices": "b",
+			"signedPermission": "rl",
+			"signedResourceTypes": "co",
+			"signedStart": "2020-02-01T00:00:00Z",
+			"signedExpiry": "2050-01-01T00:00:00Z",
+			"signedProtocol": "https",
+			"keyToSign": "key1"
+		},
+		"os_images": {
+			"rhel-74": {
+				"publisher": "RedHat",
+				"offer": "RHEL-SAP",
+				"sku": "7.4",
+				"version": "latest"
+			},
+			"rhel-76": {
+				"publisher": "RedHat",
+				"offer": "RHEL-SAP",
+				"sku": "7.6",
+				"version": "7.6.2019071300"
+			},
+			"sles-12-sp5": {
+				"publisher": "SUSE",
+				"offer": "sles-sap-12-sp5",
+				"sku": "gen1",
+				"version": "2020.06.10"
+			},
+			"sles-15": {
+				"publisher": "SUSE",
+				"offer": "SLES-SAP",
+				"sku": "15",
+				"version": "latest"
+			}
+		}
+	},
+	"resources": [{
+			"apiVersion": "2018-02-01",
+			"name": "pid-4d714694-a1f4-48ab-8963-7b21fd2ee75d",
+			"type": "Microsoft.Resources/deployments",
+			"properties": {
+				"mode": "Incremental",
+				"template": {
+					"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+					"contentVersion": "1.0.0.0",
+					"resources": []
+				}
+			}
+		},
+		{
+			"condition": "[equals(parameters('virtual_network_new_or_existing'),'new')]",
+			"type": "Microsoft.Network/virtualNetworks",
+			"apiVersion": "2017-09-01",
+			"name": "[parameters('virtual_network_name')]",
+			"location": "[parameters('location')]",
+			"properties": {
+				"addressSpace": {
+					"addressPrefixes": [
+						"[parameters('virtual_network_address_prefix')]"
+					]
+				},
+				"subnets": [{
+					"name": "[parameters('subnet_name')]",
+					"properties": {
+						"addressPrefix": "[parameters('subnet_address_prefix')]"
+					}
+				}]
+			}
+		},
+		{
+			"type": "Microsoft.Network/networkInterfaces",
+			"apiVersion": "2019-09-01",
+			"name": "[variables('netweaver_nic_name')]",
+			"location": "[parameters('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/virtualNetworks/', parameters('virtual_network_name'))]"
+			],
+			"properties": {
+				"ipConfigurations": [{
+					"name": "ipconfig1",
+					"properties": {
+						"privateIPAllocationMethod": "Dynamic",
+						"subnet": {
+							"id": "[variables('subnet_id')]"
+						},
+						"primary": true,
+						"privateIPAddressVersion": "IPv4"
+					}
+				}],
+				"enableAcceleratedNetworking": false,
+				"enableIPForwarding": false
+			}
+		},
+		{
+			"type": "Microsoft.Compute/disks",
+			"apiVersion": "2019-07-01",
+			"name": "[variables('netweaver_disk_sapmnt')]",
+			"location": "[parameters('location')]",
+			"sku": {
+				"name": "Premium_LRS"
+			},
+			"properties": {
+				"creationData": {
+					"createOption": "Empty"
+				},
+				"diskSizeGB": 1023
+			}
+		},
+		{
+			"type": "Microsoft.Compute/disks",
+			"apiVersion": "2019-07-01",
+			"name": "[variables('netweaver_disk_usrsap')]",
+			"location": "[parameters('location')]",
+			"sku": {
+				"name": "Premium_LRS"
+			},
+			"properties": {
+				"creationData": {
+					"createOption": "Empty"
+				},
+				"diskSizeGB": 1023
+			}
+		},
+		{
+			"type": "Microsoft.Compute/virtualMachines",
+			"apiVersion": "2019-03-01",
+			"name": "[parameters('netweaver_vm_name')]",
+			"location": "[parameters('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/networkInterfaces/', variables('netweaver_nic_name'))]",
+				"[resourceId('Microsoft.Compute/disks/', variables('netweaver_disk_sapmnt'))]",
+				"[resourceId('Microsoft.Compute/disks/', variables('netweaver_disk_usrsap'))]"
+			],
+			"properties": {
+				"hardwareProfile": {
+					"vmSize": "[parameters('netweaver_vm_size')]"
+				},
+				"storageProfile": {
+					"imageReference": {
+						"publisher": "[variables('os_images')[parameters('netweaver_os_image')].publisher]",
+						"offer": "[variables('os_images')[parameters('netweaver_os_image')].offer]",
+						"sku": "[variables('os_images')[parameters('netweaver_os_image')].sku]",
+						"version": "[variables('os_images')[parameters('netweaver_os_image')].version]"
+					},
+					"osDisk": {
+						"osType": "Linux",
+						"name": "[variables('netweaver_osdisk_name')]",
+						"createOption": "FromImage",
+						"caching": "ReadWrite",
+						"managedDisk": {
+							"storageAccountType": "Premium_LRS"
+						},
+						"diskSizeGB": 64
+					},
+					"dataDisks": [{
+						"lun": 0,
+						"name": "[variables('netweaver_disk_sapmnt')]",
+						"createOption": "attach",
+						"managedDisk": {
+							"id": "[resourceId('Microsoft.Compute/disks/', variables('netweaver_disk_sapmnt'))]"
+						}
+					},
+					{
+						"lun": 1,
+						"name": "[variables('netweaver_disk_usrsap')]",
+						"createOption": "attach",
+						"managedDisk": {
+							"id": "[resourceId('Microsoft.Compute/disks/', variables('netweaver_disk_usrsap'))]"
+						}
+					}]
+				},
+				"osProfile": {
+					"computerName": "[parameters('netweaver_vm_name')]",
+					"adminUsername": "[parameters('netweaver_os_user')]",
+					"adminPassword": "[parameters('master_pw')]",
+					"linuxConfiguration": {
+						"disablePasswordAuthentication": false,
+						"provisionVMAgent": true
+					},
+					"secrets": [],
+					"allowExtensionOperations": true
+				},
+				"networkProfile": {
+					"networkInterfaces": [{
+						"id": "[resourceId('Microsoft.Network/networkInterfaces', variables('netweaver_nic_name'))]"
+					}]
+				}
+			}
+		},
+		{
+			"name": "[concat(parameters('netweaver_vm_name'),'/CustomScriptForLinux')]",
+			"type": "Microsoft.Compute/virtualMachines/extensions",
+			"location": "[parameters('location')]",
+			"apiVersion": "2019-03-01",
+			"dependsOn": [
+				"[concat('Microsoft.Compute/virtualMachines/', parameters('netweaver_vm_name'))]"
+			],
+			"properties": {
+				"publisher": "Microsoft.Azure.Extensions",
+				"type": "CustomScript",
+				"typeHandlerVersion": "2.0",
+				"autoUpgradeMinorVersion": true,
+				"settings": {
+					"fileUris": [
+						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPCAR')]",
+						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPHOSTAGENT.SAR')]"
+					]
+				},
+				"protectedSettings": {
+					"storageAccountName": "[parameters('repo_storageacc_name')]",
+					"storageAccountKey": "[listKeys(resourceId(parameters('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', parameters('repo_storageacc_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
+					"commandToExecute": "[concat('$(which zypper yum 2>/dev/null) $(which zypper &>/dev/null && echo ''--no-gpg-checks'') install -y https://lnwrepop01.blob.core.windows.net/phoenix-node/lnw-phoenix-managed-node-0.1-1.el7.noarch.rpm && phoenix-node-setup -a ./SAPHOSTAGENT.SAR -c ./SAPCAR -p ''', parameters('master_pw'), '''')]"
+				}
+			}
+		},
+		{
+			"type": "Microsoft.Network/networkInterfaces",
+			"apiVersion": "2019-09-01",
+			"name": "[variables('hana_nic_name')]",
+			"location": "[parameters('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/virtualNetworks/', parameters('virtual_network_name'))]"
+			],
+			"properties": {
+				"ipConfigurations": [{
+					"name": "ipconfig1",
+					"properties": {
+						"privateIPAllocationMethod": "Dynamic",
+						"subnet": {
+							"id": "[variables('subnet_id')]"
+						},
+						"primary": true,
+						"privateIPAddressVersion": "IPv4"
+					}
+				}],
+				"enableAcceleratedNetworking": false,
+				"enableIPForwarding": false
+			}
+		},
+		{
+			"type": "Microsoft.Compute/disks",
+			"apiVersion": "2019-07-01",
+			"name": "[concat(parameters('hana_vm_name'), '-hanadata')]",
+			"location": "[parameters('location')]",
+			"sku": {
+				"name": "Premium_LRS"
+			},
+			"properties": {
+				"creationData": {
+					"createOption": "Empty"
+				},
+				"diskSizeGB": "[variables('hana_datadisk_size')]"
+			}
+		},
+		{
+			"type": "Microsoft.Compute/disks",
+			"apiVersion": "2019-07-01",
+			"name": "[concat(parameters('hana_vm_name'), '-hanalog')]",
+			"location": "[parameters('location')]",
+			"sku": {
+				"name": "Premium_LRS"
+			},
+			"properties": {
+				"creationData": {
+					"createOption": "Empty"
+				},
+				"diskSizeGB": 2047
+			}
+		},
+		{
+			"type": "Microsoft.Compute/disks",
+			"apiVersion": "2019-07-01",
+			"name": "[concat(parameters('hana_vm_name'), '-hanashared')]",
+			"location": "[parameters('location')]",
+			"properties": {
+				"creationData": {
+					"createOption": "Empty"
+				},
+				"diskSizeGB": "[variables('hana_backupdisk_size')]"
+			}
+		},
+		{
+			"type": "Microsoft.Compute/disks",
+			"apiVersion": "2019-07-01",
+			"name": "[concat(parameters('hana_vm_name'), '-hanabackup')]",
+			"location": "[parameters('location')]",
+			"properties": {
+				"creationData": {
+					"createOption": "Empty"
+				},
+				"diskSizeGB": 1023
+			}
+		},
+		{
+			"type": "Microsoft.Compute/virtualMachines",
+			"apiVersion": "2019-03-01",
+			"name": "[parameters('hana_vm_name')]",
+			"location": "[parameters('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/networkInterfaces/', variables('hana_nic_name'))]",
+				"[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanadata'))]",
+				"[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanalog'))]",
+				"[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanashared'))]",
+				"[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanabackup'))]"
+			],
+			"properties": {
+				"hardwareProfile": {
+					"vmSize": "[parameters('hana_vm_size')]"
+				},
+				"storageProfile": {
+					"imageReference": {
+						"publisher": "[variables('os_images')[parameters('hana_os_image')].publisher]",
+						"offer": "[variables('os_images')[parameters('hana_os_image')].offer]",
+						"sku": "[variables('os_images')[parameters('hana_os_image')].sku]",
+						"version": "[variables('os_images')[parameters('hana_os_image')].version]"
+					},
+					"osDisk": {
+						"osType": "Linux",
+						"name": "[variables('hana_osdisk_name')]",
+						"createOption": "FromImage",
+						"caching": "ReadWrite",
+						"managedDisk": {
+							"storageAccountType": "Premium_LRS"
+						},
+						"diskSizeGB": 64
+					},
+					"dataDisks": [{
+						"lun": 0,
+						"name": "[concat(parameters('hana_vm_name'),'-hanadata')]",
+						"createOption": "attach",
+						"managedDisk": {
+							"id": "[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanadata'))]"
+						}
+					}, {
+						"lun": 1,
+						"name": "[concat(parameters('hana_vm_name'),'-hanalog')]",
+						"createOption": "attach",
+						"managedDisk": {
+							"id": "[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanalog'))]"
+						}
+					}, {
+						"lun": 2,
+						"name": "[concat(parameters('hana_vm_name'),'-hanashared')]",
+						"createOption": "attach",
+						"managedDisk": {
+							"id": "[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanashared'))]"
+						}
+					}, {
+						"lun": 3,
+						"name": "[concat(parameters('hana_vm_name'),'-hanabackup')]",
+						"createOption": "attach",
+						"managedDisk": {
+							"id": "[resourceId('Microsoft.Compute/disks/', concat(parameters('hana_vm_name'),'-hanabackup'))]"
+						}
+					}]
+				},
+				"osProfile": {
+					"computerName": "[parameters('hana_vm_name')]",
+					"adminUsername": "[parameters('hana_os_user')]",
+					"adminPassword": "[parameters('master_pw')]",
+					"linuxConfiguration": {
+						"disablePasswordAuthentication": false,
+						"provisionVMAgent": true
+					},
+					"secrets": [],
+					"allowExtensionOperations": true
+				},
+				"networkProfile": {
+					"networkInterfaces": [{
+						"id": "[resourceId('Microsoft.Network/networkInterfaces', variables('hana_nic_name'))]"
+					}]
+				}
+			}
+		},
+		{
+			"name": "[concat(parameters('hana_vm_name'),'/CustomScriptForLinux')]",
+			"type": "Microsoft.Compute/virtualMachines/extensions",
+			"location": "[parameters('location')]",
+			"apiVersion": "2019-03-01",
+			"dependsOn": [
+				"[concat('Microsoft.Compute/virtualMachines/', parameters('hana_vm_name'))]"
+			],
+			"properties": {
+				"publisher": "Microsoft.Azure.Extensions",
+				"type": "CustomScript",
+				"typeHandlerVersion": "2.0",
+				"autoUpgradeMinorVersion": true,
+				"settings": {
+					"fileUris": [
+						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPCAR')]",
+						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPHOSTAGENT.SAR')]"
+					]
+				},
+				"protectedSettings": {
+					"storageAccountName": "[parameters('repo_storageacc_name')]",
+					"storageAccountKey": "[listKeys(resourceId(parameters('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', parameters('repo_storageacc_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
+					"commandToExecute": "[concat('$(which zypper yum 2>/dev/null) $(which zypper &>/dev/null && echo ''--no-gpg-checks'') install -y https://lnwrepop01.blob.core.windows.net/phoenix-node/lnw-phoenix-managed-node-0.1-1.el7.noarch.rpm && phoenix-node-setup -a ./SAPHOSTAGENT.SAR -c ./SAPCAR -p ''', parameters('master_pw'), '''')]"
+				}
+			}
+		},
+		{
+			"type": "Microsoft.Network/networkInterfaces",
+			"apiVersion": "2019-07-01",
+			"name": "[variables('control_nic_name')]",
+			"location": "[parameters('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/virtualNetworks/', parameters('virtual_network_name'))]"
+			],
+			"properties": {
+				"ipConfigurations": [{
+					"name": "ipconfig1",
+					"properties": {
+						"privateIPAllocationMethod": "Dynamic",
+						"subnet": {
+							"id": "[variables('subnet_id')]"
+						},
+						"primary": true,
+						"privateIPAddressVersion": "IPv4"
+					}
+				}],
+				"enableAcceleratedNetworking": false,
+				"enableIPForwarding": false
+			}
+		},
+		{
+			"name": "[parameters('control_vm_name')]",
+			"type": "Microsoft.Compute/virtualMachines",
+			"apiVersion": "2019-07-01",
+			"location": "[parameters('location')]",
+			"dependsOn": [
+				"[concat('Microsoft.Compute/virtualMachines/', parameters('hana_vm_name'))]",
+				"[concat('Microsoft.Network/networkInterfaces/', variables('control_nic_name'))]"
+			],
+			"plan": {
+				"name": "phoenix-base-01",
+				"publisher": "lnw-softgmbh",
+				"product": "phoenix-base"
+			},
+			"properties": {
+				"hardwareProfile": {
+					"vmSize": "[variables('control_vm_size')]"
+				},
+				"storageProfile": {
+					"osDisk": {
+						"createOption": "fromImage",
+						"managedDisk": {
+							"storageAccountType": "Premium_LRS"
+						},
+						"name": "[variables('control_osdisk_name')]"
+					},
+					"imageReference": {
+
+						"publisher": "lnw-softgmbh",
+						"offer": "phoenix-base",
+						"sku": "phoenix-base-01",
+						"version": "0.1.1"
+					}
+				},
+				"networkProfile": {
+					"networkInterfaces": [{
+						"id": "[resourceId('Microsoft.Network/networkInterfaces', variables('control_nic_name'))]"
+					}]
+				},
+				"osProfile": {
+					"computerName": "[parameters('control_vm_name')]",
+					"adminUsername": "[variables('control_vm_username')]",
+					"adminPassword": "[variables('control_vm_password')]",
+					"customData": "[base64(concat('{\"default\": ',string(variables('control_customdata_default')), ',\"repository\":', string(union(variables('control_customdata_repository'),json(concat('{\"storage_account_sas64\": \"',base64(listAccountSas(resourceId(parameters('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', parameters('repo_storageacc_name')),'2019-06-01',variables('sasFunctionValues')).accountSasToken),'\"}')))),', \"hana\":', string(union(json(concat('{\"host\":\"',reference(variables('hana_nic_name')).ipConfigurations[0].properties.privateIPAddress,'\"}')),variables('control_customdata_hana'))),', \"netweaver\":', string(union(json(concat('{\"host\":\"',reference(variables('netweaver_nic_name')).ipConfigurations[0].properties.privateIPAddress,'\"}')),variables('control_customdata_netweaver'))),'}'))]"
+				}
+			}
+		}
+	],
+	"outputs": {
+		"webui": {
+			"type": "string",
+			"value": "[concat('http://',reference(variables('control_nic_name')).ipConfigurations[0].properties.privateIPAddress,':8000/')]"
+		}
+	}
+}
