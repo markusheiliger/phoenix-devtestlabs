@@ -102,12 +102,6 @@
 			}
 		},
 
-		"repo_storageacc_name": {
-			"type": "string"
-		},
-		"repo_storageacc_resource_group": {
-			"type": "string"
-		},
 		"control_vm_name": {
 			"defaultValue": "control",
 			"type": "string"
@@ -116,6 +110,8 @@
 	"variables": {
 
 		"subnet_id": "$(LabSubnetId)",
+		"repo_storageacc_name": "asapdevtestrepo",
+		"repo_storageacc_resource_group": "SAPDevTest",
 
 		"hana_nic_name": "[concat(parameters('hana_vm_name'),'-nic')]",
 		"hana_osdisk_name": "[concat(parameters('hana_vm_name'), '-os')]",
@@ -338,13 +334,13 @@
 				"autoUpgradeMinorVersion": true,
 				"settings": {
 					"fileUris": [
-						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPCAR')]",
-						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPHOSTAGENT.SAR')]"
+						"[concat('https://', variables('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPCAR')]",
+						"[concat('https://', variables('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPHOSTAGENT.SAR')]"
 					]
 				},
 				"protectedSettings": {
-					"storageAccountName": "[parameters('repo_storageacc_name')]",
-					"storageAccountKey": "[listKeys(resourceId(parameters('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', parameters('repo_storageacc_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
+					"storageAccountName": "[variables('repo_storageacc_name')]",
+					"storageAccountKey": "[listKeys(resourceId(variables('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', variables('repo_storageacc_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
 					"commandToExecute": "[concat('$(which zypper yum 2>/dev/null) $(which zypper &>/dev/null && echo ''--no-gpg-checks'') install -y https://lnwrepop01.blob.core.windows.net/phoenix-node/lnw-phoenix-managed-node-0.1-1.el7.noarch.rpm && phoenix-node-setup -a ./SAPHOSTAGENT.SAR -c ./SAPCAR -p ''', parameters('master_pw'), '''')]"
 				}
 			}
@@ -520,13 +516,13 @@
 				"autoUpgradeMinorVersion": true,
 				"settings": {
 					"fileUris": [
-						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPCAR')]",
-						"[concat('https://', parameters('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPHOSTAGENT.SAR')]"
+						"[concat('https://', variables('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPCAR')]",
+						"[concat('https://', variables('repo_storageacc_name'), '.blob.core.windows.net/', 'hostagent/SAPHOSTAGENT.SAR')]"
 					]
 				},
 				"protectedSettings": {
-					"storageAccountName": "[parameters('repo_storageacc_name')]",
-					"storageAccountKey": "[listKeys(resourceId(parameters('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', parameters('repo_storageacc_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
+					"storageAccountName": "[variables('repo_storageacc_name')]",
+					"storageAccountKey": "[listKeys(resourceId(variables('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', variables('repo_storageacc_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
 					"commandToExecute": "[concat('$(which zypper yum 2>/dev/null) $(which zypper &>/dev/null && echo ''--no-gpg-checks'') install -y https://lnwrepop01.blob.core.windows.net/phoenix-node/lnw-phoenix-managed-node-0.1-1.el7.noarch.rpm && phoenix-node-setup -a ./SAPHOSTAGENT.SAR -c ./SAPCAR -p ''', parameters('master_pw'), '''')]"
 				}
 			}
