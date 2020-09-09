@@ -134,7 +134,7 @@
 			"webauth": "true"
 		},
 		"control_customdata_repository": {
-			"storage_account_name": "[parameters('repo_storageacc_name')]"
+			"storage_account_name": "[variables('repo_storageacc_name')]"
 		},
 		"control_customdata_hana": {
 			"hostagent_user": "sapadm",
@@ -591,7 +591,7 @@
 					"computerName": "[parameters('control_vm_name')]",
 					"adminUsername": "[variables('control_vm_username')]",
 					"adminPassword": "[variables('control_vm_password')]",
-					"customData": "[base64(concat('{\"default\": ',string(variables('control_customdata_default')), ',\"repository\":', string(union(variables('control_customdata_repository'),json(concat('{\"storage_account_sas64\": \"',base64(listAccountSas(resourceId(parameters('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', parameters('repo_storageacc_name')),'2019-06-01',variables('sasFunctionValues')).accountSasToken),'\"}')))),', \"hana\":', string(union(json(concat('{\"host\":\"',reference(variables('hana_nic_name')).ipConfigurations[0].properties.privateIPAddress,'\"}')),variables('control_customdata_hana'))),', \"netweaver\":', string(union(json(concat('{\"host\":\"',reference(variables('netweaver_nic_name')).ipConfigurations[0].properties.privateIPAddress,'\"}')),variables('control_customdata_netweaver'))),'}'))]"
+					"customData": "[base64(concat('{\"default\": ',string(variables('control_customdata_default')), ',\"repository\":', string(union(variables('control_customdata_repository'),json(concat('{\"storage_account_sas64\": \"',base64(listAccountSas(resourceId(variables('repo_storageacc_resource_group'),'Microsoft.Storage/storageAccounts', variables('repo_storageacc_name')),'2019-06-01',variables('sasFunctionValues')).accountSasToken),'\"}')))),', \"hana\":', string(union(json(concat('{\"host\":\"',reference(variables('hana_nic_name')).ipConfigurations[0].properties.privateIPAddress,'\"}')),variables('control_customdata_hana'))),', \"netweaver\":', string(union(json(concat('{\"host\":\"',reference(variables('netweaver_nic_name')).ipConfigurations[0].properties.privateIPAddress,'\"}')),variables('control_customdata_netweaver'))),'}'))]"
 				}
 			}
 		}
